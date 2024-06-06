@@ -1,11 +1,11 @@
 import torch
 from torch_geometric.utils  import degree, contains_isolated_nodes, add_remaining_self_loops 
-from torch.nn import Linear, Parameter
+from torch.nn import Linear, Parameter, Module, LSTM
 from torch_geometric.nn import MessagePassing
 
 
 class myGCNConv (MessagePassing):
-    def __init__ (self, in_channel, out_channel) : 
+    def __init__ (self, in_channel: int, out_channel: int) : 
         super().__init__(aggr= "mean") 
         
         self.out_channel = out_channel
@@ -60,6 +60,13 @@ class myGCNConv (MessagePassing):
         # multiplication with norm 
         msg = norm.view(-1,1) * torch.tanh(x_j_trans * edge_attr_trans)
         return msg 
+
+class GcnDenseModel (Module):
+    def __init__(self, input_feature_size : int , output_feature_size : int):
+        super().__init__(self)
+        self.gcn = myGCNConv(input_feature_size, output_feature_size)
+        return None
+
 
 
 
