@@ -62,9 +62,16 @@ class myGCNConv (MessagePassing):
         return msg 
 
 class GcnDenseModel (Module):
-    def __init__(self, input_feature_size : int , output_feature_size : int):
+    def __init__(self, input_feature_size : int , output_feature_size : int, hid_size : int):
         super().__init__(self)
+        # graph convolution layer 
         self.gcn = myGCNConv(input_feature_size, output_feature_size)
+
+        # x will have shapes (length, output_feature_size)
+        # x will need to change into shapes (max_length, output_feature_size)
+        self.lstm = LSTM(input_size=output_feature_size, hidden_size=hid_size, bias = False, num_layers=3)
+
+        # x has shape (max_length, hidden_size)
         return None
 
 
