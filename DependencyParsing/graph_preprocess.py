@@ -1,5 +1,4 @@
 import spacy
-from torch_geometric import edge_index
 from torch_geometric.data import Data
 import torch
 from torch import tensor
@@ -19,13 +18,12 @@ class Preprocessor ():
         if not os.path.exists(word_path):
             os.mkdir(word_path)
 
-        # importing spacy model
-        self.sm_eng_model = spacy.load("en_core_web_sm", enable=["tok2vec", "lemmatizer", "parser","morphologizer"])
-
-        # get list of words and dependies
         self.update_paths()
-        return None
 
+        # importing spacy model
+        self.sm_eng_model = spacy.load("en_core_web_sm", enable=["tok2vec", "lemmatizer", "parser","attribute_ruler"])
+
+    # get list of words and dependies
     def update_paths (self): 
         self.dependencies = os.listdir(self.DepPath)
         self.words = os.listdir(self.WordPath)
@@ -34,7 +32,6 @@ class Preprocessor ():
     def transform (self, sentence : str) -> tuple[Data, tuple[list,list]]:
         # doc type conversion of sentence 
         doc = self.sm_eng_model(sentence.strip().lower())
-        
         # Graph attributes  
         x = []
         edge_index = []
@@ -68,17 +65,18 @@ class Preprocessor ():
             if head.lemma_ != token.lemma_:
                 # dependcy already present 
                 if token.dep_ in self.dependencies: 
-                    dep_tensor = torch.load(f = os.path.join(self.DepPath, token.dep_),weights_only= True).requires_grad = True
+                    dep_tensor = torch.load(f = os.path.join(self.DepPath, token.dep_), weights_only= True)
+                    dep_tensor.requires_grad = True
+                    edge_attr.append(dep_tensor)
                 # dependency not present
                 else: 
-                    dep_tensor = torch.randn(16, requires_grad=True)
+                    dep_tensor = torch.randn((16,), requires_grad=True)
+                    edge_attr.append(dep_tensor)
                     torch.save(f= os.path.join(self.DepPath, token.dep_), obj = dep_tensor)
                     self.update_paths()
 
             # adding edge for tail to head 
             edge_index.append(tensor([token.i, head.i]))
-            # adding edge attribute 
-            edge_attr.append(dep_tensor)
             # saving dependency order
             edge_attr_order.append(token.dep_)
         
@@ -92,66 +90,7 @@ class Preprocessor ():
         return DependencyGraph, (x_order, edge_attr_order)
 
 
-
-
-'''
-----------------------------------------------------------------------------------------------------------------------
-'''
-
-# def preprocessing (sentence : str ): 
-#     dependies = os.listdir(dep_path)
-#     words = os.listdir(word_path)
-
-#     doc = sm_eng_model(sentence.strip().lower())
-#     # nodes tensor
-#     x = []
-#     for token in doc : 
-#         if token.has_vector : 
-#             x.append(tensor(token.vector, requires_grad = False ))
-#         # if vector not in spacy model 
-#         else :
-#             if token.lemma_ in words : 
-#                 word_tensor = torch.load(f= os.path.join(word_path, token.lemma_), weights_only= True)
-#                 x.append(word_tensor)
-#             else :
-#                 temp_tensor = torch.rand((96,), requires_grad= True)
-#                 x.append(temp_tensor)
-#                 torch.save(f= os.path.join(word_path, token.lemma_), obj = temp_tensor)
-#     # node tensor prepared 
-#     x = torch.stack(x)
-#     
-#     # edge from tail to head
-#     edge_index = []
-#     # edge attribute tensor
-#     edge_attr = []
-
-#     for token in doc : 
-#         tail = token 
-#         head = token.head
-
-#         if (head.lemma != token.lemma):
-#             if token.dep_ in dependies :
-#                 dep_tensor = torch.load(f = os.path.join(dep_path,token.dep_), weights_only= True)
-#             else : 
-#                 dep_tensor  = torch.rand(16, requires_grad=True)
-#                 torch.save(f= os.path.join(dep_path, token.dep_), obj = dep_tensor)
-
-#             # adding edge for tail to head 
-#             edge_index.append(tensor([tail.i, head.i]))
-#             # adding edge attribute 
-#             edge_attr.append(dep_tensor)
-#     # edge and attribute tensor prepared
-#     edge_index = torch.stack(edge_index).t().contiguous()
-#     edge_attr = torch.stack(edge_attr)
-#     
-#     # Homogenous Data object creation
-#     graph = Data(x=x, edge_index = edge_index, edge_attr= edge_attr)
-#             
-
-'''
------------------------------------------------------------------------------------------------------------------
-'''
-
+# --------------------
 if __name__ == "__main__":
     preprocess = Preprocessor(dep_path = "dep-embed", word_path= "word-embed")
     sentence = "A huge dog bit me so hard that I almost got my bone cracked."
@@ -159,3 +98,4 @@ if __name__ == "__main__":
     print(graph)
     print(order[0])
     print(order[1])
+
