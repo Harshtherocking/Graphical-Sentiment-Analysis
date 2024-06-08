@@ -61,8 +61,10 @@ class myGCNConv (MessagePassing):
         msg = norm.view(-1,1) * torch.tanh(x_j_trans * edge_attr_trans)
         return msg 
 
+
+
 class GcnDenseModel (Module):
-    def __init__(self, input_feature_size : int , output_feature_size : int, hid_size : int):
+    def __init__(self, input_feature_size : int , output_feature_size : int, hid_size : int, max_length : int):
         super().__init__(self)
         # graph convolution layer 
         self.gcn = myGCNConv(input_feature_size, output_feature_size)
@@ -70,8 +72,9 @@ class GcnDenseModel (Module):
         # x will have shapes (length, output_feature_size)
         # x will need to change into shapes (max_length, output_feature_size)
         self.lstm = LSTM(input_size=output_feature_size, hidden_size=hid_size, bias = False, num_layers=3)
-
         # x has shape (max_length, hidden_size)
+        # x now reshapes in (max_length, hidden_size)
+        self.lin = Linear(out_features=3, in_features=)
         return None
 
 
