@@ -1,6 +1,7 @@
 import torch
+from torch_geometric import edge_index
 from torch_geometric.utils  import degree, contains_isolated_nodes, add_remaining_self_loops 
-from torch.nn import Linear, Parameter, Module, LSTM
+from torch.nn import Linear, Parameter, Module, LSTM, AdaptiveMaxPool1d, AdaptiveAvgPool1d, Sigmoid, Softmax
 from torch_geometric.nn import MessagePassing
 
 
@@ -13,11 +14,9 @@ class myGCNConv (MessagePassing):
         # shape = (out_channel, in_channel)
         W_1 = Linear(in_channel, out_channel, bias = False).weight
         W_1.requires_grad = True
-        self.W_1 = Parameter(W_1)
 
         W_2 = Linear(in_features= edge_attr.shape[1], out_features= self.out_channel, bias = False).weight
         W_2.requires_grad = True
-        self.W_2 = Parameter(W_2)
 
         self.bias = Parameter(torch.empty(out_channel))
         
@@ -36,8 +35,7 @@ class myGCNConv (MessagePassing):
         edge_index, edge_attr = add_remaining_self_loops(
                 edge_index = edge_index, 
                 edge_attr = edge_attr, 
-                fill_value= torch.ones(edge_attr.shape[1]),
-                num_nodes= x.shape[0])
+                fill_value= torch.ones(edge_attr.shape[1]), num_nodes= x.shape[0])
 
         # computing normalization
         row, col = edge_index
@@ -66,33 +64,36 @@ class myGCNConv (MessagePassing):
 class GcnDenseModel (Module):
     def __init__(self, input_feature_size : int , output_feature_size : int, hid_size : int, max_length : int):
         super().__init__(self)
+        self.hid_size = hid_size
+        self.max_length = max_length
+
         # graph convolution layer 
         self.gcn = myGCNConv(input_feature_size, output_feature_size)
+        self.sigmoid = Sigmoid()
 
         # x will have shapes (length, output_feature_size)
         # x will need to change into shapes (max_length, output_feature_size)
-        self.lstm = LSTM(input_size=output_feature_size, hidden_size=hid_size, bias = False, num_layers=3)
+        self.lstm = LSTM(input_size=output_feature_size, hidden_size=self.hid_size, bias = False, num_layers=3)
+        # last_hidden_layer has shape (3, hidden_size)
+
+        # pooling 
         # x has shape (max_length, hidden_size)
-        # x now reshapes in (max_length, hidden_size)
-        self.lin = Linear(out_features=3, in_features=)
+        self.max_pool = AdaptiveMaxPool1d(self.hid_size//2)
+        self.avg_pool = AdaptiveAvgPool1d(self.hid_size//2)
+        # two tensors each with shape (max_length, hidden_size)
+
+        # combine max_pool, avg_pool and lstm output -> flatten 
+        self.lin = Linear(out_features = 3, in_features= 2*(self.max_length * self.hid_size//2) + (3* self.hid_size))
+        self.soft = Softmax(dim=0)
+        
         return None
 
 
-
+# ------------------------------------------------------------------------
 
 if __name__ == "__main__":
     
     graph = torch.load("graph", weights_only= False)
-    
     x = graph["x"]
-    edge_index = graph["edge_index"]
     edge_attr = graph["edge_attr"]
-
-    print("before applying graph convolution : ", x.shape)
-    print("edge attr : ", edge_attr.shape)
-
-    gcn = myGCNConv(x.shape[1],32)
-    x = gcn(x, edge_index, edge_attr)
-
-    print("after applying graph convolution : ", x.shape)
-    print("edge attr : ", edge_attr.shape)
+    edge_index = graph["edge_index"]

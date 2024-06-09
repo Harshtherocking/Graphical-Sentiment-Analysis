@@ -21,7 +21,7 @@ class Preprocessor ():
         self.update_paths()
 
         # importing spacy model
-        self.sm_eng_model = spacy.load("en_core_web_sm", enable=["tok2vec", "lemmatizer", "parser","attribute_ruler"])
+        self.sm_eng_model = spacy.load("en_core_web_sm", enable=["tok2vec", "lemmatizer", "parser"])
 
     # get list of words and dependies
     def update_paths (self): 
@@ -29,7 +29,7 @@ class Preprocessor ():
         self.words = os.listdir(self.WordPath)
         return None
     
-    def transform (self, sentence : str) -> tuple[Data, tuple[list,list]]:
+    def __call__ (self, sentence : str) -> tuple[Data, tuple[list,list]]:
         # doc type conversion of sentence 
         doc = self.sm_eng_model(sentence.strip().lower())
         # Graph attributes  
@@ -45,6 +45,7 @@ class Preprocessor ():
             # word has vector
             if token.has_vector : 
                 x.append(tensor(token.vector, requires_grad= False))
+                x_order.append(False)
             # word doesn't have vector
             else : 
                 # word already present
@@ -57,8 +58,8 @@ class Preprocessor ():
                     x.append(word_tensor)
                     torch.save(f= os.path.join(self.WordPath, token.lemma_), obj= word_tensor)
                     self.update_paths()
-            # saving word order
-            x_order.append(token.lemma_)
+                # saving word order
+                x_order.append(token.lemma_)
             
             head = token.head
             # to avoid loop conflict 
@@ -94,7 +95,7 @@ class Preprocessor ():
 if __name__ == "__main__":
     preprocess = Preprocessor(dep_path = "dep-embed", word_path= "word-embed")
     sentence = "A huge dog bit me so hard that I almost got my bone cracked."
-    graph , order = preprocess.transform(sentence)
+    graph , order = preprocess(sentence)
     print(graph)
     print(order[0])
     print(order[1])
