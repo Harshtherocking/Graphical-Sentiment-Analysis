@@ -17,13 +17,3 @@ print("for first sentence of length : ", input_sequence_1.shape[0])
 print("output: ", output.shape)
 print("h_t: ", h_t.shape)
 print("c_t: ", c_t.shape)
-
-#run
-input_sequence_2= torch.randn(12,in_size)
-output, states= lstmlayer(input_sequence_2, (h_o,c_o))
-h_t, c_t = states
-
-print("for second sentence of length : ", input_sequence_2.shape[0])
-print("output: ", output.shape)
-print("h_t: ", h_t.shape)
-print("c_t: ", c_t.shape)

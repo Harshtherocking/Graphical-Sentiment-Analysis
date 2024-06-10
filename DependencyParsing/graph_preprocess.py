@@ -29,7 +29,7 @@ class Preprocessor ():
         self.words = os.listdir(self.WordPath)
         return None
     
-    def __call__ (self, sentence : str) -> tuple[Data, tuple[list,list]]:
+    def __call__ (self, sentence : str) -> tuple[Data, tuple[list,list]] | str:
         # doc type conversion of sentence 
         doc = self.sm_eng_model(sentence.strip().lower())
         # Graph attributes  
@@ -77,7 +77,10 @@ class Preprocessor ():
                     self.update_paths()
 
             # adding edge for tail to head 
-            edge_index.append(tensor([token.i, head.i]))
+            try : 
+                edge_index.append(tensor([token.i, head.i]))
+            except : 
+                return sentence
             # saving dependency order
             edge_attr_order.append(token.dep_)
         

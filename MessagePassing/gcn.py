@@ -12,11 +12,9 @@ class myGCNConv (MessagePassing):
         self.out_channel = out_channel
 
         # shape = (out_channel, in_channel)
-        W_1 = Linear(in_channel, out_channel, bias = False).weight
-        W_1.requires_grad = True
+        self.A= Linear(in_channel, out_channel, bias = False)
 
-        W_2 = Linear(in_features= edge_attr.shape[1], out_features= self.out_channel, bias = False).weight
-        W_2.requires_grad = True
+        self.B= Linear(in_features= edge_attr.shape[1], out_features= self.out_channel, bias = False)
 
         self.bias = Parameter(torch.empty(out_channel))
         
@@ -52,8 +50,10 @@ class myGCNConv (MessagePassing):
         
     def message(self, x_j, norm, edge_attr): 
         # linear tranformation to (*, out_channel)
-        x_j_trans = torch.matmul(x_j, self.W_1.t())
-        edge_attr_trans = torch.matmul(edge_attr, self.W_2.t())
+        # x_j_trans = torch.matmul(x_j, self.W_1.t())
+        x_j_trans = self.A(x_j)
+        # edge_attr_trans = torch.matmul(edge_attr, self.W_2.t())
+        edge_attr_trans = self.B(edge_attr)
         # element wise multiplication and activation
         # multiplication with norm 
         msg = norm.view(-1,1) * torch.tanh(x_j_trans * edge_attr_trans)
@@ -84,9 +84,15 @@ class GcnDenseModel (Module):
 
         # combine max_pool, avg_pool and lstm output -> flatten 
         self.lin = Linear(out_features = 3, in_features= 2*(self.max_length * self.hid_size//2) + (3* self.hid_size))
-        self.soft = Softmax(dim=0)
+        self.softmax = Softmax(dim=0)
         
         return None
+
+    def forward (self, x : torch.Tensor, edge_attr : torch.Tensor, edge_index : torch.Tensor): 
+        x_out = self.gcn(x= x, edge_index = edge_index, edge_attr = edge_attr) 
+        x_out = self.sigmoid(x_out)
+        # x has shape (sentence_len, out_features)
+        # padding 
 
 
 # ------------------------------------------------------------------------
