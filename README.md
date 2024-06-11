@@ -1,9 +1,5 @@
 # Graphical-Sentiment-Analysis
-### I'm currently working on it. 
-I've added dataset and recently completed the major portion of my proposed Neural Network Architecture.
-
-Things I need to do : 
-- fixed length determination 
-- padding sequence 
-- forward pass for model
-- backward pass
+## Architecture: 
+![image](./src/GcnArch.jpeg)
+## Graph Convolution Equation: 
+$$x_i = \underset{j \epsilon N(i) \cup \{i\}}{\overline{X}} \dfrac{1}{\sqrt{deg(i)}\sqrt{deg(j)}} \tanh(A\,x_j  + B e_{ji}) + Bias$$
