@@ -1,8 +1,9 @@
 import torch
-from torch_geometric import edge_index
+from torch_geometric.data import Data
 from torch_geometric.utils  import degree, contains_isolated_nodes, add_remaining_self_loops 
 from torch.nn import Linear, Parameter, Module, LSTM, AdaptiveMaxPool1d, AdaptiveAvgPool1d, Sigmoid, Softmax
 from torch_geometric.nn import MessagePassing
+from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 
 
 class myGCNConv (MessagePassing):
@@ -61,39 +62,66 @@ class myGCNConv (MessagePassing):
 
 
 
+# ---------------------------------------------------------
 class GcnDenseModel (Module):
-    def __init__(self, input_feature_size : int , output_feature_size : int, hid_size : int, max_length : int):
+    def __init__(self, input_feature_size : int , output_feature_size : int, hid_size : int):
         super().__init__(self)
+
         self.hid_size = hid_size
-        self.max_length = max_length
+        self.c0 = torch.randn(3,self.hid_size, requires_grad=True)
+        self.h0 = torch.randn(3,self.hid_size, requires_grad=True)
 
         # graph convolution layer 
         self.gcn = myGCNConv(input_feature_size, output_feature_size)
         self.sigmoid = Sigmoid()
 
-        # x will have shapes (length, output_feature_size)
-        # x will need to change into shapes (max_length, output_feature_size)
-        self.lstm = LSTM(input_size=output_feature_size, hidden_size=self.hid_size, bias = False, num_layers=3)
-        # last_hidden_layer has shape (3, hidden_size)
+        self.lstm = LSTM(input_size=output_feature_size, hidden_size=self.hid_size, bias = False, num_layers=3, batch_first= True)
 
-        # pooling 
-        # x has shape (max_length, hidden_size)
-        self.max_pool = AdaptiveMaxPool1d(self.hid_size//2)
-        self.avg_pool = AdaptiveAvgPool1d(self.hid_size//2)
-        # two tensors each with shape (max_length, hidden_size)
+        self.max_pool = AdaptiveMaxPool1d(1)
+        self.avg_pool = AdaptiveAvgPool1d(1)
 
-        # combine max_pool, avg_pool and lstm output -> flatten 
-        self.lin = Linear(out_features = 3, in_features= 2*(self.max_length * self.hid_size//2) + (3* self.hid_size))
-        self.softmax = Softmax(dim=0)
-        
+        self.lin = Linear(out_features = 3, in_features= 3*self.hid_size)
+        self.softmax = Softmax(dim=1)
+
         return None
 
-    def forward (self, x : torch.Tensor, edge_attr : torch.Tensor, edge_index : torch.Tensor): 
-        x_out = self.gcn(x= x, edge_index = edge_index, edge_attr = edge_attr) 
-        x_out = self.sigmoid(x_out)
-        # x has shape (sentence_len, out_features)
-        # padding 
 
+    def forward (self, graph: list[Data]): 
+        batch_size = len(graph)
+        self.x = [g["x"] for g in graph]
+        self.edge_attr = [g["edge_attr"] for g in graph]
+        edge_index = [g["edge_index"] for g in graph]
+        
+        # graph convolution on each graph in the batch
+        seq = []
+        lengths = []
+        for idx in range(batch_size):
+            node = self.gcn(self.x[idx], self.edge_attr[idx], edge_index[idx])
+            seq.append(self.sigmoid(node))
+            lengths.append(node.shape[0])
+
+        # padding of node list : x(i) has shape (length(i), out_features)
+        padded_seq = pad_sequence(seq, batch_first = True)
+
+        # Pack sequence object initialisation
+        packed_seq = pack_padded_sequence(padded_seq,lengths = torch.tensor(lengths), batch_first= True, enforce_sorted= False)
+
+        # passing pack sequence object 
+        lstm_out, states = self.lstm(packed_seq, (self.h0,self.c0))
+        h_t, c_t  = states
+
+        # pooling the output
+        lstm_out, lengths = pad_packed_sequence(lstm_out)
+        max_pool = self.max_pool(lstm_out.permute(0,2,1)).view(batch_size,-1)
+        avg_pool = self.avg_pool(lstm_out.permute(0,2,1)).view(batch_size,-1)
+
+        # concat pooling
+        pool_concat = torch.concat([h_t[-1],max_pool,avg_pool])
+        
+        # dense layer 
+        res = self.lin(pool_concat)
+        return self.softmax(res)
+        
 
 # ------------------------------------------------------------------------
 
