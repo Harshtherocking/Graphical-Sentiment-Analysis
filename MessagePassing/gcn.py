@@ -49,7 +49,7 @@ class myGCNConv (MessagePassing):
         return output
         
     def message(self, x_j, norm, edge_attr): 
-        # linear tranformation to (*, out_channel)
+        # linear transformation to (*, out_channel)
         # x_j_trans = torch.matmul(x_j, self.W_1.t())
         x_j_trans = self.A(x_j)
         # edge_attr_trans = torch.matmul(edge_attr, self.W_2.t())
