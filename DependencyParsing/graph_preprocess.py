@@ -1,7 +1,7 @@
 import spacy
 from torch_geometric.data import Data
 import torch
-from torch import tensor
+from torch import tensor 
 import os 
 
 class Preprocessor (): 
@@ -21,7 +21,7 @@ class Preprocessor ():
         self.update_paths()
 
         # importing spacy model
-        self.sm_eng_model = spacy.load("en_core_web_sm", enable=["tok2vec", "lemmatizer", "parser"])
+        self.sm_eng_model = spacy.load("en_core_web_sm", enable=["tok2vec", "lemmatizer", "parser","tagger","morphologizer","attribute_ruler"])
 
     # get list of words and dependies
     def update_paths (self): 
@@ -29,7 +29,7 @@ class Preprocessor ():
         self.words = os.listdir(self.WordPath)
         return None
     
-    def __call__ (self, sentence : str) -> tuple[Data, tuple[list,list]] | str:
+    def __call__ (self, sentence : str) -> tuple[Data, tuple[list,list]] | None :
         # doc type conversion of sentence 
         doc = self.sm_eng_model(sentence.strip().lower())
         # Graph attributes  
@@ -63,7 +63,7 @@ class Preprocessor ():
             
             head = token.head
             # to avoid loop conflict 
-            if head.lemma_ != token.lemma_:
+            if head != token:
                 # dependcy already present 
                 if token.dep_ in self.dependencies: 
                     dep_tensor = torch.load(f = os.path.join(self.DepPath, token.dep_), weights_only= True)
@@ -76,19 +76,22 @@ class Preprocessor ():
                     torch.save(f= os.path.join(self.DepPath, token.dep_), obj = dep_tensor)
                     self.update_paths()
 
-            # adding edge for tail to head 
-            try : 
+                # saving order of dependencies
+                edge_attr_order.append(token.dep_)
+
+                # adding edge for tail to head 
                 edge_index.append(tensor([token.i, head.i]))
-            except : 
-                return sentence
-            # saving dependency order
-            edge_attr_order.append(token.dep_)
         
         # Data object creation
         x = torch.stack(x)
         edge_index = torch.stack(edge_index).t().contiguous()
         edge_attr = torch.stack(edge_attr)
 
+        if edge_index.shape[1] != edge_attr.shape[0]: 
+            print(doc)
+            print(f"{edge_index.shape[1]} ----- {edge_attr.shape[0]}")
+            return None
+    
         DependencyGraph = Data(x=x, edge_index= edge_index, edge_attr =edge_attr)
 
         return DependencyGraph, (x_order, edge_attr_order)
