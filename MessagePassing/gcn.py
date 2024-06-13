@@ -1,7 +1,7 @@
 import torch
 from torch_geometric.data import Data
 from torch_geometric.utils  import degree, contains_isolated_nodes, add_remaining_self_loops 
-from torch.nn import Linear, Parameter, Module, LSTM, AdaptiveMaxPool1d, AdaptiveAvgPool1d, Sigmoid, Softmax
+from torch.nn import Linear, Parameter, Module, LSTM, AdaptiveMaxPool1d, AdaptiveAvgPool1d, Softmax, Tanh
 from torch_geometric.nn import MessagePassing
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 
@@ -75,7 +75,7 @@ class GcnDenseModel (Module):
 
         # graph convolution layer 
         self.gcn = myGCNConv(input_feature_size, output_feature_size,dep_feature_size)
-        self.sigmoid = Sigmoid()
+        self.tanh= Tanh()
 
         self.lstm = LSTM(input_size=output_feature_size, hidden_size=self.hid_size, bias = False, num_layers=3, batch_first= True)
 
@@ -97,7 +97,7 @@ class GcnDenseModel (Module):
         # graph convolution on each graph in the batch
         for g in graphs : 
             node = self.gcn(g)
-            seq.append(self.sigmoid(node))
+            seq.append(self.tanh(node))
             lengths.append(node.shape[0])
             
         # padding of node list : x(i) has shape (length(i), out_features)
