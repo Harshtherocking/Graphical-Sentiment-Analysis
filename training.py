@@ -1,33 +1,53 @@
 import torch 
 from torch.utils.data import Dataset, DataLoader, random_split
+from torch.nn import CrossEntropyLoss
+from torch.optim import SGD
 import pandas as pd
 import os 
+from torch_geometric.data import Data
+from sklearn.preprocessing import OneHotEncoder
 
 from DependencyParsing.graph_preprocess import Preprocessor
+from MessagePassing.gcn import GcnDenseModel
 
 class TextDataset (Dataset):
     def __init__ (self, dataset_path : str, dep_path : str, word_path : str):
         assert dataset_path, "No Dataset Path provided"
         assert dep_path, "No DepEmbed Path provided"
         assert word_path, "No WordEmbed Path provided"
+
         self.path = dataset_path
+        
         self.data = pd.read_csv(dataset_path)
-        self.preprocess = Preprocessor(dep_path, word_path)
+        self.data = self.data.dropna(axis=0,ignore_index= True)
+        self.data.drop_duplicates(inplace= True, ignore_index=True)
         self.len = len(self.data)
+
+        self.preprocess = Preprocessor(dep_path, word_path)
+
+        # one hot encoding for category
+        self.encoder = OneHotEncoder()
+        self.encoder.fit(self.data["category"].unique().reshape(-1,1))
         return None
 
     def __len__(self):
         return self.len
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> tuple[Data, torch.Tensor,tuple[list,list]]:
         sentence = self.data.loc[index]["clean_text"]
-        sentiment = torch.Tensor([self.data.loc[index]["category"]])
-        try : 
-            graph , order = self.preprocess(sentence)
+        sentiment = self.data.loc[index]["category"]
+        if not sentence :
+            return self.__getitem__(index+1)
+        sentiment = torch.tensor(self.encoder.transform([[sentiment]]).toarray()).reshape(-1)
+        
+        out = self.preprocess(sentence) 
+        if out is not None: 
+            graph , order = out
             return graph,sentiment,order 
-        except : 
-            if index != self.len-1: 
-                return self.__getitem__(index+1)
+        else : 
+            # print(f"Preprocessing failed for index : {index}")
+            return self.__getitem__(index+1)
+
     
     def __iter__ (self):
         self.index = 0
@@ -39,11 +59,13 @@ class TextDataset (Dataset):
         self.index +=1
         return self.__getitem__(self.index)
 
+
 def collate(batch):
     graph = [item[0] for item in batch]
     sentiment = torch.stack([item[1] for item in batch])
     order = [item[2] for item in batch]
     return graph, sentiment, order
+
 
 
 if __name__ == "__main__": 
@@ -55,17 +77,57 @@ if __name__ == "__main__":
     # Dataset object initialisation
     dataset = TextDataset(data, depPath, wordPath)
 
-    # training and testing split 
     batch_size = 32
-    train_data , test_data, val_data = random_split(dataset, [0.7,0.2,0,1])
+    epochs = 1
+    learning_rate = 1e-3
+
+    # Module initialisation
+    model = GcnDenseModel(
+            input_feature_size= dataset[0][0]["x"].shape[1],
+            output_feature_size= 32,
+            hid_size= 16,
+            dep_feature_size= dataset[0][0]["edge_attr"].shape[1]
+        )
+
+    # loss function initialisation
+    loss_fn = CrossEntropyLoss()
+    # optimizer initialisation
+    model_optim = SGD(params= model.parameters(), lr = learning_rate)
+
+    # training and testing split 
+    train_data , test_data = random_split(dataset, [0.8,0.2])
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle = True, collate_fn= collate)
     test_loader = DataLoader(test_data, batch_size=batch_size, shuffle = True, collate_fn= collate)
-    val_loader = DataLoader(train_data, batch_size=batch_size, shuffle = True, collate_fn= collate)
 
-    for batch , out in enumerate(train_loader):
-        print(batch)
-        print(out[0][0])
-        break
     
-    # out = train_loader
-    # print(out)
+    def train_loop(dataloader, model, loss_fn, optim):
+        model.train()
+        size = len(dataloader.dataset)
+        for batch, out in enumerate(dataloader):
+            X,y,order = out
+            pred = model(X)
+            
+            loss = loss_fn(pred,y)
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
+            
+            if batch % 100 == 0:
+                loss, current = loss.item() , batch * batch_size + len(X)
+                print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+
+            graph = X[0]
+            grad = graph["edge_attr"].grad()
+            print(grad)
+
+            break
+
+    for e in range(epochs):
+        print(f"Epoch : {e+1} -----------------")
+        train_loop(train_loader,model, loss_fn, model_optim)
+
+    # for batch , out in enumerate(train_loader):
+    #     X, y , order = out
+    #     pred = model(X)
+    #     print(pred.shape)
+    #     break
