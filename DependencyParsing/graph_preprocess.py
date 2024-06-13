@@ -82,6 +82,10 @@ class Preprocessor ():
                 # adding edge for tail to head 
                 edge_index.append(tensor([token.i, head.i]))
         
+        if len(edge_index) and len(x) and len(edge_attr): 
+            pass
+        else :
+            return None
         # Data object creation
         x = torch.stack(x)
         edge_index = torch.stack(edge_index).t().contiguous()
@@ -101,8 +105,10 @@ class Preprocessor ():
 if __name__ == "__main__":
     preprocess = Preprocessor(dep_path = "dep-embed", word_path= "word-embed")
     sentence = "A huge dog bit me so hard that I almost got my bone cracked."
-    graph , order = preprocess(sentence)
-    print(graph)
-    print(order[0])
-    print(order[1])
+    out = preprocess(sentence)
+    if out is not None : 
+        graph, order = out
+        print(graph)
+        print(order[0])
+        print(order[1])
 
