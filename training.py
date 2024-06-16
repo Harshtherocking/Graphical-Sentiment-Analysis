@@ -1,7 +1,7 @@
 import torch 
 from torch.utils.data import Dataset, DataLoader, random_split
 from torch.nn import CrossEntropyLoss
-from torch.optim import SGD
+from torch.optim import Optimizer,SGD
 import pandas as pd
 import os 
 from torch_geometric.data import Data
@@ -10,6 +10,7 @@ from sklearn.preprocessing import OneHotEncoder
 from DependencyParsing.graph_preprocess import Preprocessor
 from MessagePassing.gcn import GcnDenseModel
 
+# -------------------------------------------------------------------------------
 class TextDataset (Dataset):
     def __init__ (self, dataset_path : str, dep_path : str, word_path : str):
         assert dataset_path, "No Dataset Path provided"
@@ -42,7 +43,7 @@ class TextDataset (Dataset):
         
         out = self.preprocess(sentence) 
         if out is not None: 
-            graph , order = out
+            graph , order = out 
             return graph,sentiment,order 
         else : 
             # print(f"Preprocessing failed for index : {index}")
@@ -68,6 +69,7 @@ def collate(batch):
 
 
 
+# ----------------------------------------------------------------------------------------------------------
 if __name__ == "__main__": 
     WORKDIR = os.getcwd()
     data = os.path.join(WORKDIR, "Twitter_Data.csv")
@@ -99,35 +101,54 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle = True, collate_fn= collate)
     test_loader = DataLoader(test_data, batch_size=batch_size, shuffle = True, collate_fn= collate)
 
+
+    def update_and_save (embed : torch.Tensor, grad : torch.Tensor, lr : int|float, path : str) :
+        new_embed = embed - lr*grad
+        torch.save(f = path, obj = new_embed)
+        return None
+
     
-    def train_loop(dataloader, model, loss_fn, optim):
+    def train_loop(dataloader:DataLoader, model : torch.nn.Module, loss_fn, model_optim : Optimizer):
         model.train()
         size = len(dataloader.dataset)
         for batch, out in enumerate(dataloader):
             X,y,order = out
+            for graph in X : 
+                for _,t in graph : 
+                    if t.requires_grad : 
+                        t.retain_grad()
+
             pred = model(X)
-            
             loss = loss_fn(pred,y)
-            optim.zero_grad()
+
+            model_optim.zero_grad()
             loss.backward()
-            optim.step()
+            model_optim.step()
             
             if batch % 100 == 0:
                 loss, current = loss.item() , batch * batch_size + len(X)
                 print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
-            graph = X[0]
-            grad = graph["edge_attr"].grad()
-            print(grad)
 
-            break
+            # updating and saving embeddings
+            for b_no, (word_order, dep_order) in enumerate(order):
+                words= X[b_no]["x"]
+                deps= X[b_no]["edge_attr"]
+                word_grad = words.grad
+                dep_grad = deps.grad
+
+                # saving word embedding
+                for idx,word in enumerate(word_order) :
+                    if word : 
+                        update_and_save(words[idx], word_grad[idx], path = os.path.join(wordPath, word), lr = 1e-2)
+                
+                # saving dep embedding
+                for idx, dep in enumerate(dep_order):
+                    if dep : 
+                        update_and_save(deps[idx], dep_grad[idx], path = os.path.join(depPath, dep), lr = 1e-2)
+
 
     for e in range(epochs):
         print(f"Epoch : {e+1} -----------------")
         train_loop(train_loader,model, loss_fn, model_optim)
 
-    # for batch , out in enumerate(train_loader):
-    #     X, y , order = out
-    #     pred = model(X)
-    #     print(pred.shape)
-    #     break
