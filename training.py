@@ -45,9 +45,7 @@ class TextDataset (Dataset):
             graph , order = out 
             return graph,sentiment,order 
         else : 
-            # print(f"Preprocessing failed for index : {index}")
             return self.__getitem__(index+1)
-
     
     def __iter__ (self):
         self.index = 0
@@ -157,7 +155,7 @@ if __name__ == "__main__":
                 X,y,order = out
                 pred = model(X)
                 test_loss +=loss_fn(pred,y).item()
-                correct += (pred.argmax(1)==y).type(torch.float).sum().item()
+                correct += (pred.argmax()==y.argmax()).type(torch.float).sum().item()
 
         test_loss/= num_batches
         correct /= size 
