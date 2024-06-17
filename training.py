@@ -4,10 +4,9 @@ from torch.nn import CrossEntropyLoss
 from torch.optim import Optimizer,SGD
 import pandas as pd
 import os 
-from torch_geometric.data import Data
-from sklearn.preprocessing import OneHotEncoder
-
-from DependencyParsing.graph_preprocess import Preprocessor
+from torch_geometric.data import Data 
+from sklearn.preprocessing import OneHotEncoder 
+from DependencyParsing.graph_preprocess import Preprocessor 
 from MessagePassing.gcn import GcnDenseModel
 
 # -------------------------------------------------------------------------------
@@ -80,7 +79,7 @@ if __name__ == "__main__":
     dataset = TextDataset(data, depPath, wordPath)
 
     batch_size = 32
-    epochs = 1
+    epochs = 5
     learning_rate = 1e-3
 
     # Module initialisation
@@ -147,8 +146,27 @@ if __name__ == "__main__":
                     if dep : 
                         update_and_save(deps[idx], dep_grad[idx], path = os.path.join(depPath, dep), lr = 1e-2)
 
+    def test_loop (dataloader : DataLoader, model : torch.nn.Module, loss_fn):
+        model.eval()
+        size = len(dataloader.dataset)
+        num_batches = len(dataloader)
+        test_loss , correct = 0,0 
+
+        with torch.no_grad():
+            for out in dataloader :
+                X,y,order = out
+                pred = model(X)
+                test_loss +=loss_fn(pred,y).item()
+                correct += (pred.argmax(1)==y).type(torch.float).sum().item()
+
+        test_loss/= num_batches
+        correct /= size 
+        print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f}\n")
 
     for e in range(epochs):
         print(f"Epoch : {e+1} -----------------")
         train_loop(train_loader,model, loss_fn, model_optim)
+        test_loop(test_loader,model,loss_fn)
+        
+    torch.save(f = os.path.join(WORKDIR, "models", f"model1"), obj = model)
 
