@@ -1,6 +1,6 @@
 import torch 
 from torch.utils.data import Dataset, DataLoader, random_split
-from torch.nn import CrossEntropyLoss
+from torch.nn import CrossEntropyLoss, MSELoss
 from torch.optim import Optimizer,SGD
 import pandas as pd
 import os 
@@ -27,15 +27,15 @@ class TextDataset (Dataset):
 
         # one hot encoding for category
         self.encoder = OneHotEncoder()
-        self.encoder.fit(self.data["category"].unique().reshape(-1,1))
+        self.encoder.fit(self.data["label"].unique().reshape(-1,1))
         return None
 
     def __len__(self):
         return self.len
 
     def __getitem__(self, index) -> tuple[Data, torch.Tensor,tuple[list,list]]:
-        sentence = self.data.loc[index]["clean_text"]
-        sentiment = self.data.loc[index]["category"]
+        sentence = self.data.loc[index]["text"]
+        sentiment = self.data.loc[index]["label"]
         if not sentence :
             return self.__getitem__(index+1)
         sentiment = torch.tensor(self.encoder.transform([[sentiment]]).toarray()).reshape(-1)
@@ -69,23 +69,27 @@ def collate(batch):
 # ----------------------------------------------------------------------------------------------------------
 if __name__ == "__main__": 
     WORKDIR = os.getcwd()
-    data = os.path.join(WORKDIR, "Twitter_Data.csv")
+    # data = os.path.join(WORKDIR, "Twitter_Data.csv")
+    train_data = os.path.join(WORKDIR, "Train.csv")
+    test_data = os.path.join(WORKDIR, "Test.csv")
     depPath = os.path.join(WORKDIR, "Embeddings", "DepEmbed")
     wordPath = os.path.join(WORKDIR, "Embeddings", "WordEmbed")
 
     # Dataset object initialisation
-    dataset = TextDataset(data, depPath, wordPath)
+    # dataset = TextDataset(data, depPath, wordPath)
+    train_dataset = TextDataset(train_data, depPath, wordPath)
+    test_dataset = TextDataset(test_data, depPath, wordPath)
 
     batch_size = 32
-    epochs = 5
-    learning_rate = 1e-3
+    epochs = 1
+    learning_rate = 1e-2
 
     # Module initialisation
     model = GcnDenseModel(
-            input_feature_size= dataset[0][0]["x"].shape[1],
-            output_feature_size= 32,
-            hid_size= 16,
-            dep_feature_size= dataset[0][0]["edge_attr"].shape[1]
+            input_feature_size= train_dataset[0][0]["x"].shape[1],
+            output_feature_size= 16,
+            hid_size= 8,
+            dep_feature_size= test_dataset[0][0]["edge_attr"].shape[1]
         )
 
     # loss function initialisation
@@ -94,9 +98,9 @@ if __name__ == "__main__":
     model_optim = SGD(params= model.parameters(), lr = learning_rate)
 
     # training and testing split 
-    train_data , test_data = random_split(dataset, [0.8,0.2])
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle = True, collate_fn= collate)
-    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle = True, collate_fn= collate)
+    # train_data , test_data = random_split(dataset, [0.8,0.2])
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle = True, collate_fn= collate)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle = True, collate_fn= collate)
 
 
     def update_and_save (embed : torch.Tensor, grad : torch.Tensor, lr : int|float, path : str) :
@@ -113,10 +117,12 @@ if __name__ == "__main__":
             for graph in X : 
                 for _,t in graph : 
                     if t.requires_grad : 
+                        # t.register_hook(lambda x : print(f"grad updated for {graph}"))
                         t.retain_grad()
 
             pred = model(X)
-            loss = loss_fn(pred,y)
+            
+            loss = loss_fn(pred.type(torch.float),y)
 
             model_optim.zero_grad()
             loss.backward()
@@ -137,12 +143,15 @@ if __name__ == "__main__":
                 # saving word embedding
                 for idx,word in enumerate(word_order) :
                     if word : 
-                        update_and_save(words[idx], word_grad[idx], path = os.path.join(wordPath, word), lr = 1e-2)
+                        update_and_save(words[idx], word_grad[idx], path = os.path.join(wordPath, word), lr = 1e-3)
                 
                 # saving dep embedding
                 for idx, dep in enumerate(dep_order):
                     if dep : 
-                        update_and_save(deps[idx], dep_grad[idx], path = os.path.join(depPath, dep), lr = 1e-2)
+                        update_and_save(deps[idx], dep_grad[idx], path = os.path.join(depPath, dep), lr = 1e-3)
+
+
+
 
     def test_loop (dataloader : DataLoader, model : torch.nn.Module, loss_fn):
         model.eval()
@@ -167,4 +176,3 @@ if __name__ == "__main__":
         test_loop(test_loader,model,loss_fn)
         
     torch.save(f = os.path.join(WORKDIR, "models", f"model1"), obj = model)
-

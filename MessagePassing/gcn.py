@@ -1,7 +1,7 @@
 import torch
 from torch_geometric.data import Data
 from torch_geometric.utils  import degree, contains_isolated_nodes, add_remaining_self_loops 
-from torch.nn import Linear, Parameter, Module, LSTM, AdaptiveMaxPool1d, AdaptiveAvgPool1d, Softmax, Tanh
+from torch.nn import GRU, Linear, Parameter, Module, LSTM, AdaptiveMaxPool1d, AdaptiveAvgPool1d, Softmax, Tanh
 from torch_geometric.nn import MessagePassing
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 
@@ -77,12 +77,13 @@ class GcnDenseModel (Module):
         self.gcn = myGCNConv(input_feature_size, output_feature_size,dep_feature_size)
         self.tanh= Tanh()
 
-        self.lstm = LSTM(input_size=output_feature_size, hidden_size=self.hid_size, bias = False, num_layers=3, batch_first= True)
+        # self.lstm = LSTM(input_size=output_feature_size, hidden_size=self.hid_size, bias = False, num_layers=3, batch_first= True)
+        self.gru = GRU(input_size= output_feature_size, hidden_size= self.hid_size, bias = True, num_layers= 3, batch_first= True)
 
         self.max_pool = AdaptiveMaxPool1d(1)
         self.avg_pool = AdaptiveAvgPool1d(1)
 
-        self.lin = Linear(out_features = 3, in_features= 3*self.hid_size + 2*hid_size)
+        self.lin = Linear(out_features = 2, in_features= 3*self.hid_size + 2*hid_size)
         self.softmax = Softmax(dim=1)
 
         return None
@@ -107,8 +108,8 @@ class GcnDenseModel (Module):
         packed_seq = pack_padded_sequence(padded_seq,lengths = torch.tensor(lengths), batch_first= True, enforce_sorted= False)
 
         # passing pack sequence object 
-        lstm_out, states = self.lstm(packed_seq, (self.h0,self.c0))
-        h_t, c_t  = states
+        lstm_out, states = self.gru(packed_seq, self.h0)
+        h_t = states
 
         # pooling the output
         lstm_out, lengths = pad_packed_sequence(lstm_out, batch_first = True)
@@ -123,8 +124,8 @@ class GcnDenseModel (Module):
         return self.softmax(res)
 
     def init_states (self, batch_size):
-        self.c0 = torch.randn(3,batch_size,self.hid_size, requires_grad=True)   
-        self.h0 = torch.randn(3,batch_size,self.hid_size, requires_grad=True)
+        # self.c0 = torch.zeros(3,batch_size,self.hid_size)   
+        self.h0 = torch.zeros(3,batch_size,self.hid_size)
         return None
 
 
