@@ -80,8 +80,8 @@ class GcnDenseModel (Module):
         # self.lstm = LSTM(input_size=output_feature_size, hidden_size=self.hid_size, bias = False, num_layers=3, batch_first= True)
         self.gru = GRU(input_size= output_feature_size, hidden_size= self.hid_size, bias = True, num_layers= 3, batch_first= True)
 
-        self.max_pool = AdaptiveMaxPool1d(1)
-        self.avg_pool = AdaptiveAvgPool1d(1)
+        # self.max_pool = AdaptiveMaxPool1d(1)
+        # self.avg_pool = AdaptiveAvgPool1d(1)
 
         self.lin = Linear(out_features = 2, in_features= 3*self.hid_size + 2*hid_size)
         self.softmax = Softmax(dim=1)
@@ -100,7 +100,7 @@ class GcnDenseModel (Module):
             node = self.gcn(g)
             seq.append(self.tanh(node))
             lengths.append(node.shape[0])
-            
+        
         # padding of node list : x(i) has shape (length(i), out_features)
         padded_seq = pad_sequence(seq, batch_first = True)
 
@@ -108,18 +108,22 @@ class GcnDenseModel (Module):
         packed_seq = pack_padded_sequence(padded_seq,lengths = torch.tensor(lengths), batch_first= True, enforce_sorted= False)
 
         # passing pack sequence object 
-        lstm_out, states = self.gru(packed_seq, self.h0)
-        h_t = states
+        gru_out, h_t = self.gru(packed_seq, self.h0)
 
         # pooling the output
-        lstm_out, lengths = pad_packed_sequence(lstm_out, batch_first = True)
-        max_pool = self.max_pool(lstm_out.permute(0,2,1)).view(batch_size,-1)
-        avg_pool = self.avg_pool(lstm_out.permute(0,2,1)).view(batch_size,-1)
+        gru_out, lengths = pad_packed_sequence(gru_out, batch_first = True)
 
-        # concat pooling
-        pool_concat = torch.concat([h_t.view(batch_size,-1),max_pool,avg_pool], dim=1)
+        # adaptive average pooling by hand
+        avg_pool = torch.sum(gru_out, dim=1)/lengths.view(-1,1)
+
+        # adaptive max pooling by hand
+        max_pool = torch.cat([torch.max(i[:l], dim=0)[0].view(1,-1) for i,l in zip(gru_out,lengths)], dim=0)
         
-        # dense layer 
+        # # concat pooling
+        h_t_permuted = h_t.permute(1,0,2) 
+        pool_concat = torch.concat([h_t_permuted.reshape(batch_size,-1),max_pool,avg_pool], dim=1)
+
+
         res = self.lin(pool_concat)
         return self.softmax(res)
 
@@ -134,10 +138,8 @@ class GcnDenseModel (Module):
 if __name__ == "__main__":
     
     graph = torch.load("graph", weights_only= False)
-    x = graph["x"]
-    edge_attr = graph["edge_attr"]
-    edge_index = graph["edge_index"]
 
-    gnn = myGCNConv(in_channel =96, out_channel= 16, attr_in_channel =16)
-    x = gnn (x,edge_index,edge_attr)
-    print(x.shape)
+    batched_graph = [graph,graph]
+    gnn = GcnDenseModel(input_feature_size =96, output_feature_size =32 ,hid_size =16, dep_feature_size =16)
+    x = gnn(batched_graph)
+    print(x)
