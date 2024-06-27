@@ -1,52 +1,88 @@
 import torch 
-from torch.utils.data import Dataset, DataLoader, random_split
-from torch.nn import CrossEntropyLoss, MSELoss
+from torch.utils.data import Dataset, DataLoader
+from torch.nn import CrossEntropyLoss
 from torch.optim import Optimizer,SGD
 import pandas as pd
-import os 
+import os
+import re
+import joblib
 from torch_geometric.data import Data 
 from sklearn.preprocessing import OneHotEncoder 
 from DependencyParsing.graph_preprocess import Preprocessor 
 from MessagePassing.gcn import GcnDenseModel
 
+
 # -------------------------------------------------------------------------------
 class TextDataset (Dataset):
-    def __init__ (self, dataset_path : str, dep_path : str, word_path : str):
+    def __init__ (self, dataset_path : str, ft_model_path : str, dep_enc_path : str, result_enc_path : str|None = None):
         assert dataset_path, "No Dataset Path provided"
-        assert dep_path, "No DepEmbed Path provided"
-        assert word_path, "No WordEmbed Path provided"
+        assert ft_model_path, "No FastText-Model Path provided"
+        assert dep_enc_path, "No Dependecy Encoder Path provided"
 
-        self.path = dataset_path
-        
+        # data cleaning
         self.data = pd.read_csv(dataset_path)
         self.data = self.data.dropna(axis=0,ignore_index= True)
         self.data.drop_duplicates(inplace= True, ignore_index=True)
+
+        # regex 
+        self.data["text"] = self.data["text"].apply(lambda x : self.clean_text(x))
+
         self.len = len(self.data)
 
-        self.preprocess = Preprocessor(dep_path, word_path)
-
         # one hot encoding for category
-        self.encoder = OneHotEncoder()
-        self.encoder.fit(self.data["label"].unique().reshape(-1,1))
+        if result_enc_path is None: 
+            self.encoder = OneHotEncoder()
+            self.encoder.fit(self.data["label"].unique().reshape(-1,1))
+            # saving result encoder for testing
+            with open(os.path.join("res-enc.bin"),"wb") as file:
+                joblib.dump(self.encoder, file)
+        else : 
+            with open(result_enc_path, "rb") as file:
+                self.encoder = joblib.load(file)
+
+        # dependecy encoder 
+        with open(dep_enc_path, "rb") as file :
+            self.dep_encoder = joblib.load(file)
+
+        # preprocessing objecton initialisation
+        self.preprocess = Preprocessor(ft_model_path= ft_model_path, dep_encoder= self.dep_encoder)
         return None
+
+
+    def clean_text (self, sent : str) -> str :
+        sent = sent.lower() 
+        patterns = [r'\((.*)\)', 
+                    r'\<(.*)\>', 
+                    r'[\\|\+|\=|\-|\_|\*|\/]',
+                    r'[0-9]+'
+                    ]
+        for pattern in patterns :
+            sent = re.sub(pattern,r"", sent) 
+        return sent
+
 
     def __len__(self):
         return self.len
 
-    def __getitem__(self, index) -> tuple[Data, torch.Tensor,tuple[list,list]]:
+
+    def __getitem__(self, index) -> tuple[Data,torch.Tensor]:
         sentence = self.data.loc[index]["text"]
         sentiment = self.data.loc[index]["label"]
+
+        #checking for valid sentence
         if not sentence :
             return self.__getitem__(index+1)
         sentiment = torch.tensor(self.encoder.transform([[sentiment]]).toarray()).reshape(-1)
         
         out = self.preprocess(sentence) 
+
+        # checking for valid graph creation
         if out is not None: 
-            graph , order = out 
-            return graph,sentiment,order 
+            return out , sentiment
         else : 
             return self.__getitem__(index+1)
     
+
     def __iter__ (self):
         self.index = 0
         return self
@@ -61,69 +97,66 @@ class TextDataset (Dataset):
 def collate(batch):
     graph = [item[0] for item in batch]
     sentiment = torch.stack([item[1] for item in batch])
-    order = [item[2] for item in batch]
-    return graph, sentiment, order
+    return graph,sentiment
 
 
 
 # ----------------------------------------------------------------------------------------------------------
 if __name__ == "__main__": 
     WORKDIR = os.getcwd()
-    # data = os.path.join(WORKDIR, "Twitter_Data.csv")
+
+    # data paths
     train_data = os.path.join(WORKDIR, "Train.csv")
     test_data = os.path.join(WORKDIR, "Test.csv")
-    depPath = os.path.join(WORKDIR, "Embeddings", "DepEmbed")
-    wordPath = os.path.join(WORKDIR, "Embeddings", "WordEmbed")
+    
+      
+    depPath = os.path.join(WORKDIR, "DependencyParsing","dep-encoder.bin")
+    ft_modelPath = os.path.join(WORKDIR, "ft-model.bin")
 
     # Dataset object initialisation
-    # dataset = TextDataset(data, depPath, wordPath)
-    train_dataset = TextDataset(train_data, depPath, wordPath)
-    test_dataset = TextDataset(test_data, depPath, wordPath)
-
-    batch_size = 32
-    epochs = 1
-    learning_rate = 1e-2
+    train_dataset = TextDataset(train_data,ft_modelPath,depPath)
+    test_dataset = TextDataset(test_data,ft_modelPath,depPath, "res-enc.bin")
 
     # Module initialisation
     model = GcnDenseModel(
             input_feature_size= train_dataset[0][0]["x"].shape[1],
             output_feature_size= 16,
             hid_size= 8,
-            dep_feature_size= test_dataset[0][0]["edge_attr"].shape[1]
+            num_dep = len(list(train_dataset.dep_encoder.get_feature_names_out()))
         )
+
+    batch_size = 32
+    epochs = 5
+    learning_rate = 1e-2
+
 
     # loss function initialisation
     loss_fn = CrossEntropyLoss()
+
     # optimizer initialisation
     model_optim = SGD(params= model.parameters(), lr = learning_rate)
 
-    # training and testing split 
-    # train_data , test_data = random_split(dataset, [0.8,0.2])
+    # data loader initialisation
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle = True, collate_fn= collate)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle = True, collate_fn= collate)
 
-
-    def update_and_save (embed : torch.Tensor, grad : torch.Tensor, lr : int|float, path : str) :
-        new_embed = embed - lr*grad
-        torch.save(f = path, obj = new_embed)
-        return None
-
     
+    # training function
     def train_loop(dataloader:DataLoader, model : torch.nn.Module, loss_fn, model_optim : Optimizer):
+        # setting model to training mode
         model.train()
         size = len(dataloader.dataset)
+        # iteration 
         for batch, out in enumerate(dataloader):
-            X,y,order = out
-            for graph in X : 
-                for _,t in graph : 
-                    if t.requires_grad : 
-                        # t.register_hook(lambda x : print(f"grad updated for {graph}"))
-                        t.retain_grad()
+            X,y = out
 
+            # model prediction 
             pred = model(X)
             
+            # loss calculation
             loss = loss_fn(pred.type(torch.float),y)
 
+            # backproporgation
             model_optim.zero_grad()
             loss.backward()
             model_optim.step()
@@ -133,42 +166,33 @@ if __name__ == "__main__":
                 print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
 
 
-            # updating and saving embeddings
-            for b_no, (word_order, dep_order) in enumerate(order):
-                words= X[b_no]["x"]
-                deps= X[b_no]["edge_attr"]
-                word_grad = words.grad
-                dep_grad = deps.grad
 
-                # saving word embedding
-                for idx,word in enumerate(word_order) :
-                    if word : 
-                        update_and_save(words[idx], word_grad[idx], path = os.path.join(wordPath, word), lr = 1e-3)
-                
-                # saving dep embedding
-                for idx, dep in enumerate(dep_order):
-                    if dep : 
-                        update_and_save(deps[idx], dep_grad[idx], path = os.path.join(depPath, dep), lr = 1e-3)
-
-
-
-
+    # testing function
     def test_loop (dataloader : DataLoader, model : torch.nn.Module, loss_fn):
+        # setting model to evaluation mode
         model.eval()
         size = len(dataloader.dataset)
+
         num_batches = len(dataloader)
         test_loss , correct = 0,0 
 
         with torch.no_grad():
-            for out in dataloader :
-                X,y,order = out
+            for X,y in dataloader :
+                # prediction 
                 pred = model(X)
+                # loss calculation
                 test_loss +=loss_fn(pred,y).item()
+                # correct prediction account
                 correct += (pred.argmax()==y.argmax()).type(torch.float).sum().item()
 
+        # average loss per batch 
         test_loss/= num_batches
+
+        # for total acuracy
         correct /= size 
+
         print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f}\n")
+
 
     for e in range(epochs):
         print(f"Epoch : {e+1} -----------------")
