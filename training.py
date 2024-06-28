@@ -117,7 +117,11 @@ if __name__ == "__main__":
     train_dataset = TextDataset(train_data,ft_modelPath,depPath)
     test_dataset = TextDataset(test_data,ft_modelPath,depPath, "res-enc.bin")
 
-    # Module initialisation
+
+    batch_size = 32
+    epochs = 5
+    learning_rate = 1e-2
+
     model = GcnDenseModel(
             input_feature_size= train_dataset[0][0]["x"].shape[1],
             output_feature_size= 16,
@@ -125,16 +129,24 @@ if __name__ == "__main__":
             num_dep = len(list(train_dataset.dep_encoder.get_feature_names_out()))
         )
 
-    batch_size = 32
-    epochs = 5
-    learning_rate = 1e-2
 
+    # Module initialisation
 
     # loss function initialisation
     loss_fn = CrossEntropyLoss()
 
     # optimizer initialisation
     model_optim = SGD(params= model.parameters(), lr = learning_rate)
+
+    
+    # loading from model checkpoint if any
+    try : 
+        checkpoint = torch.load(os.path.join(WORKDIR, "checkpoints", "model1.pt"))
+        model.load_state_dict(checkpoint["model_state_dict"])
+        model_optim.load_state_dict(checkpoint["optimizer_state_dict"])
+        epochs = checkpoint["epochs"]
+    except : 
+        pass
 
     # data loader initialisation
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle = True, collate_fn= collate)
@@ -198,5 +210,13 @@ if __name__ == "__main__":
         print(f"Epoch : {e+1} -----------------")
         train_loop(train_loader,model, loss_fn, model_optim)
         test_loop(test_loader,model,loss_fn)
+
+        # saving checkpoint
+        torch.save({
+            "epoch": epochs -e-1,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": model_optim.state_dict()
+            }, os.path.join(WORKDIR, "checkpoints", "model1.pt"))
+        
         
     torch.save(f = os.path.join(WORKDIR, "models", f"model1"), obj = model)
