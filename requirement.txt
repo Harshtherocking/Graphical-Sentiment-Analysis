@@ -1,5 +1,9 @@
 pandas
+numpy
+Cython
+meson-python
+joblib
 scikit-learn
-torch
+torch --index-url https://download.pytorch.org/whl/cpu
 torch_geometric
 spacy

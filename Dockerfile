@@ -1,18 +1,28 @@
-FROM python:3.9.19-alpine3.20
+FROM ubuntu:latest
 
 COPY . /Graphical-Sentiment-Analysis
 
 WORKDIR /Graphical-Sentiment-Analysis
 
-# pip commands
-RUN pip install --upgradable pip &&\
-    pip install -r ./requirement.txt &&\
-    python -m spacy download en_core_web_sm
+# git and python installation
+RUN apt update --yes &&\
+    apt install --yes build-essential &&\
+    apt install --yes git &&\
+    apt install --yes python3
+  
+# pip installation
+RUN apt install --yes python3-venv python3-pip
+
+# virtual environment 
+
+# package installation
+
+RUN pip install --break-system-packages -r ./requirement.txt &&\
+    python3 -m spacy download en_core_web_sm
 
 # fastext installation
-RUN sudo apt install git &&\
-    git clone https://github.com/facebookresearch/fastText.git &&\
-    pip install ./fastext/ &&\ 
+RUN git clone https://github.com/facebookresearch/fastText.git &&\
+    pip install --break-system-packages ./fastext/ &&\ 
     rm -rf ./fastext
 
 # fasttext model training initialization
