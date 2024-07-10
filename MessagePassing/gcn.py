@@ -1,7 +1,7 @@
 import torch
 from torch_geometric.data import Data
 from torch_geometric.utils  import degree, contains_isolated_nodes, add_remaining_self_loops 
-from torch.nn import GRU, Linear, Parameter, Module, LSTM, AdaptiveMaxPool1d, AdaptiveAvgPool1d, Softmax, Tanh
+from torch.nn import GRU, Linear, Parameter, Module, LSTM, AdaptiveMaxPool1d, AdaptiveAvgPool1d, Softmax, Tanh, BatchNorm1d, TransformerEncoderLayer
 from torch_geometric.nn import MessagePassing
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 
@@ -65,14 +65,35 @@ class GcnDenseModel (Module):
 
         # graph convolution layer 
         self.gcn = GCN(input_feature_size, output_feature_size,num_dep)
+
+        # batch normalization
+        self.batchNorm1 = BatchNorm1d(output_feature_size)
+
+        # transformer encoder
+        self.transformer_encoder = TransformerEncoderLayer(
+                d_model = output_feature_size,
+                nhead = 4,
+                batch_first = True,
+                dim_feedforward =  4 * output_feature_size,
+                bias = True
+                )
+        
         
         # rnn layer 
-        self.gru = GRU(input_size= output_feature_size, hidden_size= self.hid_size, bias = True, num_layers= 3, batch_first= True)
+        # self.gru = GRU(input_size= output_feature_size, hidden_size= self.hid_size, bias = True, num_layers= 3, batch_first= True)
+
+        # batch normalization 
+        self.batchNorm2 = BatchNorm1d(output_feature_size)
 
         # dense layer 
-        self.lin = Linear(out_features = 2, in_features= 3*self.hid_size + 2*hid_size)
+        # self.lin = Linear(out_features = 2, in_features= 3*self.hid_size + 2*hid_size)
+        self.lin = Linear(out_features = 2, in_features= 2*output_feature_size)
+        
+        # batch normalization
+        self.batchNorm3 = BatchNorm1d(2)
         
         self.softmax = Softmax(dim=1)
+
         self.tanh= Tanh()
 
 
@@ -88,30 +109,47 @@ class GcnDenseModel (Module):
             seq.append(self.tanh(node))
             lengths.append(node.shape[0])
         
+        lengths = torch.tensor(lengths)
         # padding of node list : x(i) has shape (length(i), out_features)
         padded_seq = pad_sequence(seq, batch_first = True)
 
+        # (batch_size, lengths, output)
+        # applying batch norm
+        padded_seq = self.batchNorm1(padded_seq.permute(0,2,1))
+        padded_seq = padded_seq.permute(0,2,1)
+
         # Pack sequence object initialisation
-        packed_seq = pack_padded_sequence(padded_seq,lengths = torch.tensor(lengths), batch_first= True, enforce_sorted= False)
+        # packed_seq = pack_padded_sequence(padded_seq,lengths = torch.tensor(lengths), batch_first= True, enforce_sorted= False)
 
         # passing pack sequence object 
-        gru_out, h_t = self.gru(packed_seq, self.h0)
+        # gru_out, h_t = self.gru(packed_seq, self.h0)
+
+        # passing pack sequence object  
+        encoder_out = self.transformer_encoder(padded_seq)
 
         # pooling the output
-        gru_out, lengths = pad_packed_sequence(gru_out, batch_first = True)
+        # out, lengths = pad_packed_sequence(encoder_out, batch_first = True)
+
+        # (batch_size, lengths, output)
+        # appyling batch norm
+        encoder_out = self.batchNorm2(encoder_out.permute(0,2,1)) 
+        encoder_out = encoder_out.permute(0,2,1)
 
         # adaptive average pooling by hand
-        avg_pool = torch.sum(gru_out, dim=1)/lengths.view(-1,1)
+        avg_pool = torch.sum(encoder_out, dim=1)/lengths.view(-1,1)
 
         # adaptive max pooling by hand
-        max_pool = torch.cat([torch.max(i[:l], dim=0)[0].view(1,-1) for i,l in zip(gru_out,lengths)], dim=0)
+        max_pool = torch.cat([torch.max(i[:l], dim=0)[0].view(1,-1) for i,l in zip(encoder_out,lengths)], dim=0)
         
         # # concat pooling
-        h_t_permuted = h_t.permute(1,0,2) 
-        pool_concat = torch.concat([h_t_permuted.reshape(batch_size,-1),max_pool,avg_pool], dim=1)
+        # h_t_permuted = h_t.permute(1,0,2) 
+        # pool_concat = torch.concat([h_t_permuted.reshape(batch_size,-1),max_pool,avg_pool], dim=1)
+        pool_concat = torch.concat([max_pool,avg_pool],dim=1)
 
         # dense layer propogation
         res = self.lin(pool_concat)
+        res = self.batchNorm3(res)
+
         return self.softmax(res)
 
 

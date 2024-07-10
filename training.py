@@ -1,7 +1,7 @@
 import torch 
 from torch.utils.data import Dataset, DataLoader
 from torch.nn import CrossEntropyLoss
-from torch.optim import Optimizer,SGD
+from torch.optim import Adam, Optimizer
 import pandas as pd
 import os
 import re
@@ -19,7 +19,7 @@ class TextDataset (Dataset):
         assert ft_model_path, "No FastText-Model Path provided"
         assert dep_enc_path, "No Dependecy Encoder Path provided"
 
-        # data cleaning
+        # data cleaning 
         self.data = pd.read_csv(dataset_path)
         self.data = self.data.dropna(axis=0,ignore_index= True)
         self.data.drop_duplicates(inplace= True, ignore_index=True)
@@ -87,11 +87,13 @@ class TextDataset (Dataset):
         self.index = 0
         return self
 
+
     def __next__ (self):
         if self.index >= self.len : 
             raise StopIteration
         self.index +=1
         return self.__getitem__(self.index)
+
 
 
 def collate(batch):
@@ -119,9 +121,11 @@ if __name__ == "__main__":
 
 
     batch_size = 32
-    epochs = 5
+    epochs = 15
     learning_rate = 1e-2
 
+    
+    # Module initialisation
     model = GcnDenseModel(
             input_feature_size= train_dataset[0][0]["x"].shape[1],
             output_feature_size= 16,
@@ -130,13 +134,11 @@ if __name__ == "__main__":
         )
 
 
-    # Module initialisation
-
     # loss function initialisation
     loss_fn = CrossEntropyLoss()
 
     # optimizer initialisation
-    model_optim = SGD(params= model.parameters(), lr = learning_rate)
+    model_optim = Adam(params = model.parameters(), lr = learning_rate, amsgrad=True)
 
     
     # loading from model checkpoint if any
@@ -144,7 +146,6 @@ if __name__ == "__main__":
         checkpoint = torch.load(os.path.join(WORKDIR, "checkpoints", "model1.pt"))
         model.load_state_dict(checkpoint["model_state_dict"])
         model_optim.load_state_dict(checkpoint["optimizer_state_dict"])
-        epochs = checkpoint["epochs"]
     except : 
         pass
 
@@ -213,10 +214,9 @@ if __name__ == "__main__":
 
         # saving checkpoint
         torch.save({
-            "epoch": epochs -e-1,
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": model_optim.state_dict()
-            }, os.path.join(WORKDIR, "checkpoints", "model1.pt"))
+            }, os.path.join(WORKDIR, "checkpoints", f"model1.pt"))
         
         
-    torch.save(f = os.path.join(WORKDIR, "models", f"model1"), obj = model)
+    torch.save(f = os.path.join(WORKDIR, "models", f"model"), obj = model)
