@@ -4,6 +4,8 @@ Cython
 meson-python
 joblib
 scikit-learn
-torch --index-url https://download.pytorch.org/whl/cpu
+torch torchtext --index-url https://download.pytorch.org/whl/cpu
 torch_geometric
 spacy
+acceralate
+transfomers

@@ -10,7 +10,8 @@ from torch_geometric.data import Data
 from sklearn.preprocessing import OneHotEncoder 
 from DependencyParsing.graph_preprocess import Preprocessor 
 from MessagePassing.gcn import GcnDenseModel
-
+from accelerate import Accelerator
+from tqdm import tqdm 
 
 # -------------------------------------------------------------------------------
 class TextDataset (Dataset):
@@ -103,13 +104,14 @@ def collate(batch):
 
 
 
+
 # ----------------------------------------------------------------------------------------------------------
 if __name__ == "__main__": 
     WORKDIR = os.getcwd()
 
     # data paths
-    train_data = os.path.join(WORKDIR, "Train.csv")
-    test_data = os.path.join(WORKDIR, "Test.csv")
+    train_data = os.path.join(WORKDIR,"dataset", "Train.csv")
+    test_data = os.path.join(WORKDIR, "dataset", "Test.csv")
     
       
     depPath = os.path.join(WORKDIR, "DependencyParsing","dep-encoder.bin")
@@ -153,6 +155,11 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle = True, collate_fn= collate)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle = True, collate_fn= collate)
 
+
+    # acceralor declaration
+    accelerator = Accelerator()
+    model, model_optim, train_loader = accelerator.prepare(model, model_optim, train_loader)
+
     
     # training function
     def train_loop(dataloader:DataLoader, model : torch.nn.Module, loss_fn, model_optim : Optimizer):
@@ -160,7 +167,7 @@ if __name__ == "__main__":
         model.train()
         size = len(dataloader.dataset)
         # iteration 
-        for batch, out in enumerate(dataloader):
+        for batch, out in tqdm(enumerate(dataloader)):
             X,y = out
 
             # model prediction 
@@ -171,7 +178,8 @@ if __name__ == "__main__":
 
             # backproporgation
             model_optim.zero_grad()
-            loss.backward()
+            accelerator.backward(loss)
+            # loss.backward()
             model_optim.step()
             
             if batch % 100 == 0:
@@ -207,7 +215,7 @@ if __name__ == "__main__":
         print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f}\n")
 
 
-    for e in range(epochs):
+    for e in tqdm(range(epochs)):
         print(f"Epoch : {e+1} -----------------")
         train_loop(train_loader,model, loss_fn, model_optim)
         test_loop(test_loader,model,loss_fn)
