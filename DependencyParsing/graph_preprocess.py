@@ -1,20 +1,16 @@
 import spacy
 from torch_geometric.data import Data
 import torch
-from sklearn.preprocessing import OneHotEncoder
 
 import torchtext
 torchtext.disable_torchtext_deprecation_warning()
 
 from torchtext.vocab import GloVe
 
-from . import dep_tokenizer 
+from dep_tokenizer import DepTokenizer
 
 class Preprocessor (): 
-    def __init__(self, dep_encoder : OneHotEncoder):
-        assert dep_encoder, "Dependency Encoder not provided"
-
-        self.dep_enc = dep_encoder
+    def __init__(self):
 
         # loading pretrained word embeddings
         self.glove = GloVe(name = "twitter.27B", dim=50);
@@ -24,6 +20,9 @@ class Preprocessor ():
                 "en_core_web_sm", 
                 enable=["lemmatizer", "parser","tagger","morphologizer","attribute_ruler"]
                 )
+        
+        # dependency tokenizer
+        self.dep_tokenizer = DepTokenizer()
     
 
     def __call__ (self, sentence : str) -> Data | None :
@@ -41,11 +40,11 @@ class Preprocessor ():
                 x.append(self.glove.get_vecs_by_tokens(token.lemma_))
             
             # dependency embedding from one hot encoder
-            dep = self.dep_enc.transform([[token.dep_.lower()]]).toarray()
+            dep = self.dep_tokenizer(token.dep_.lower())
             if dep is not None: 
-                edge_attr.append(torch.tensor(dep[0], dtype= torch.float))
+                edge_attr.append(dep)
             else : 
-                print("dependency one hot encoding not found")
+                print(f"dependency one hot encoding not found for {token.dep_}")
                 return None
             
             # edge from token to head 
@@ -61,3 +60,10 @@ class Preprocessor ():
         # returning graph
         return  Data(x=x, edge_index= edge_index, edge_attr =edge_attr)
 
+
+
+if __name__ == "__main__":
+    prep = Preprocessor()
+    sentence = "I saw a dog toppled over the bench just like a bottle."
+    data = prep(sentence)
+    __import__('pprint').pprint(data)
