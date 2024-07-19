@@ -1,19 +1,23 @@
 import spacy
-import joblib
 from torch_geometric.data import Data
 import torch
-import fasttext
 from sklearn.preprocessing import OneHotEncoder
 
+import torchtext
+torchtext.disable_torchtext_deprecation_warning()
+
+from torchtext.vocab import GloVe
+
+from . import dep_tokenizer 
+
 class Preprocessor (): 
-    def __init__(self, ft_model_path:str, dep_encoder : OneHotEncoder):
-        assert ft_model_path, "FastText Model not provided"
+    def __init__(self, dep_encoder : OneHotEncoder):
         assert dep_encoder, "Dependency Encoder not provided"
 
         self.dep_enc = dep_encoder
 
-        # loading fast-text model
-        self.ft_model = fasttext.load_model(ft_model_path)    
+        # loading pretrained word embeddings
+        self.glove = GloVe(name = "twitter.27B", dim=50);
 
         # importing spacy model
         self.sm_eng_model = spacy.load(
@@ -33,7 +37,8 @@ class Preprocessor ():
 
         for token in doc :
             # word embedding from fasttext model 
-            x.append(torch.tensor(self.ft_model[token.lemma_], dtype= torch.float))
+            with torch.no_grad():
+                x.append(self.glove.get_vecs_by_tokens(token.lemma_))
             
             # dependency embedding from one hot encoder
             dep = self.dep_enc.transform([[token.dep_.lower()]]).toarray()
