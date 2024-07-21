@@ -15,9 +15,8 @@ from tqdm import tqdm
 
 # -------------------------------------------------------------------------------
 class TextDataset (Dataset):
-    def __init__ (self, dataset_path : str, ft_model_path : str, dep_enc_path : str, result_enc_path : str|None = None):
+    def __init__ (self, dataset_path : str, dep_enc_path : str, result_enc_path : str|None = None):
         assert dataset_path, "No Dataset Path provided"
-        assert ft_model_path, "No FastText-Model Path provided"
         assert dep_enc_path, "No Dependecy Encoder Path provided"
 
         # data cleaning 
@@ -46,7 +45,7 @@ class TextDataset (Dataset):
             self.dep_encoder = joblib.load(file)
 
         # preprocessing objecton initialisation
-        self.preprocess = Preprocessor(ft_model_path= ft_model_path, dep_encoder= self.dep_encoder)
+        self.preprocess = Preprocessor(dep_encoder= self.dep_encoder)
         return None
 
 
@@ -115,11 +114,10 @@ if __name__ == "__main__":
     
       
     depPath = os.path.join(WORKDIR, "DependencyParsing","dep-encoder.bin")
-    ft_modelPath = os.path.join(WORKDIR, "ft-model.bin")
 
     # Dataset object initialisation
-    train_dataset = TextDataset(train_data,ft_modelPath,depPath)
-    test_dataset = TextDataset(test_data,ft_modelPath,depPath, "res-enc.bin")
+    train_dataset = TextDataset(train_data,depPath)
+    test_dataset = TextDataset(test_data,depPath, "res-enc.bin")
 
 
     batch_size = 32

@@ -52,6 +52,11 @@ class DepTokenizer():
         self.num_dep = len(self.token_dict)
         return None;
 
+
+    @classmethod
+    def get_len(cls):
+        return cls().num_dep
+
     def __call__ (self, dep : str | list[str])  -> torch.Tensor: 
         if isinstance(dep,str):
             return torch.tensor(self.token_dict[dep])
