@@ -1,12 +1,12 @@
 import torch
-from torch_geometric.data import Data
+from torch_geometric.data import Data 
 from torch_geometric.utils  import degree, contains_isolated_nodes, add_remaining_self_loops 
 from torch.nn import GRU, Linear, Parameter, Module, AdaptiveMaxPool1d, AdaptiveAvgPool1d, Softmax, Tanh, BatchNorm1d, TransformerEncoderLayer, Embedding
 from torch_geometric.nn import MessagePassing
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 
-from ..DependencyParsing import dep_tokenizer 
-num_embeddings = dep_tokenizer.DepTokenizer().get_len()
+from .DependencyParsing.depTokenizer import DepTokenizer
+num_embeddings = DepTokenizer().get_len()
 
 
 #--------------------------------------------------------------------------------------------
@@ -82,6 +82,7 @@ class GcnDenseModel (Module):
                 dim_feedforward =  4 * output_feature_size,
                 bias = True
                 )
+
         # rnn layer 
         # self.gru = GRU(input_size= output_feature_size, hidden_size= self.hid_size, bias = True, num_layers= 3, batch_first= True)
 
@@ -92,9 +93,6 @@ class GcnDenseModel (Module):
         # self.lin = Linear(out_features = 2, in_features= 3*self.hid_size + 2*hid_size)
         self.lin1 = Linear(out_features = output_feature_size, in_features= 2*output_feature_size)
         self.lin2 = Linear(out_features= 2, in_features= output_feature_size)
-        
-        # batch normalization
-        self.batchNorm3 = BatchNorm1d(2)
         
         self.softmax = Softmax(dim=1)
 
@@ -163,7 +161,6 @@ class GcnDenseModel (Module):
         # dense layer propogation
         res = self.lin1(pool_concat)
         res = self.lin2(res)
-        res = self.batchNorm3(res)
 
         return self.softmax(res)
 
@@ -176,8 +173,20 @@ class GcnDenseModel (Module):
 
 
 if __name__ == "__main__":
-    data = torch.load("graph")
-    model = GcnDenseModel(input_feature_size = data["x"].shape[1], output_feature_size = 32)
-    x = model(data)
+    from DependencyParsing.pre_process import Preprocessor
+    prep = Preprocessor()
+    sentence = "The Dog is busy chatting."
+    graph = prep(sentence)
+    print(graph)
+
+    assert isinstance(graph, Data), "graph is invalid"
+    print(graph["x"].shape[1])
+
+
+    model = GcnDenseModel(input_feature_size= graph["x"].shape[1], output_feature_size= 16)
+
+    x = model((graph,))
     print(x.shape)
+    print(x)
+
     pass

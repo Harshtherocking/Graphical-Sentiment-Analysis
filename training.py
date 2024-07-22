@@ -6,18 +6,20 @@ import pandas as pd
 import os
 import re
 import joblib
+
 from torch_geometric.data import Data 
 from sklearn.preprocessing import OneHotEncoder 
-from DependencyParsing.graph_preprocess import Preprocessor 
+
 from MessagePassing.gcn import GcnDenseModel
+from MessagePassing.DependencyParsing.pre_process import Preprocessor
+
 from accelerate import Accelerator
 from tqdm import tqdm 
 
 # -------------------------------------------------------------------------------
 class TextDataset (Dataset):
-    def __init__ (self, dataset_path : str, dep_enc_path : str, result_enc_path : str|None = None):
+    def __init__ (self, dataset_path : str, result_enc_path : str | None = None):
         assert dataset_path, "No Dataset Path provided"
-        assert dep_enc_path, "No Dependecy Encoder Path provided"
 
         # data cleaning 
         self.data = pd.read_csv(dataset_path)
@@ -40,12 +42,9 @@ class TextDataset (Dataset):
             with open(result_enc_path, "rb") as file:
                 self.encoder = joblib.load(file)
 
-        # dependecy encoder 
-        with open(dep_enc_path, "rb") as file :
-            self.dep_encoder = joblib.load(file)
 
         # preprocessing objecton initialisation
-        self.preprocess = Preprocessor(dep_encoder= self.dep_encoder)
+        self.preprocess = Preprocessor()
         return None
 
 
@@ -116,8 +115,8 @@ if __name__ == "__main__":
     depPath = os.path.join(WORKDIR, "DependencyParsing","dep-encoder.bin")
 
     # Dataset object initialisation
-    train_dataset = TextDataset(train_data,depPath)
-    test_dataset = TextDataset(test_data,depPath, "res-enc.bin")
+    train_dataset = TextDataset(train_data)
+    test_dataset = TextDataset(test_data, "res-enc.bin")
 
 
     batch_size = 32
@@ -128,9 +127,7 @@ if __name__ == "__main__":
     # Module initialisation
     model = GcnDenseModel(
             input_feature_size= train_dataset[0][0]["x"].shape[1],
-            output_feature_size= 16,
-            hid_size= 8,
-            num_dep = len(list(train_dataset.dep_encoder.get_feature_names_out()))
+            output_feature_size= 16
         )
 
 
@@ -165,7 +162,7 @@ if __name__ == "__main__":
         model.train()
         size = len(dataloader.dataset)
         # iteration 
-        for batch, out in tqdm(enumerate(dataloader)):
+        for batch, out in enumerate(dataloader):
             X,y = out
 
             # model prediction 

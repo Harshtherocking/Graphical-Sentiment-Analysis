@@ -7,7 +7,7 @@ torchtext.disable_torchtext_deprecation_warning()
 
 from torchtext.vocab import GloVe
 
-from dep_tokenizer import DepTokenizer
+from .depTokenizer import DepTokenizer
 
 class Preprocessor (): 
     def __init__(self):

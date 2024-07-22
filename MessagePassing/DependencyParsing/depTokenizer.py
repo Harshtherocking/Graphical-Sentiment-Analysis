@@ -44,8 +44,7 @@ class DepTokenizer():
                         'prep': 38,
                         'prt': 39,
                         'punct': 40,
-                        'quantmod': 41,
-                        'relcl': 42,
+                        'quantmod': 41, 'relcl': 42,
                         'root': 43,
                         'xcomp': 44};
 
